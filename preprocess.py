@@ -430,6 +430,16 @@ def _crop_to_square(
 
     return image
 
+def _resize(
+    image: Image.Image, resize_to: Optional[int] = None
+):
+    if resize_to:
+        aspect_ratio = image.size[1] / image.size[0]
+        new_height = int(resize_to * aspect_ratio)
+        image = image.resize((resize_to, new_height), Image.Resampling.LANCZOS)
+
+    return image
+
 
 def _center_of_mass(mask: Image.Image):
     """
@@ -501,7 +511,7 @@ def load_and_save_masks_and_captions(
 
     # captions
     if caption_csv:
-        print(f"Using provided captions")
+        print("Using provided captions")
         caption_df = pd.read_csv(caption_csv)
         # sort images to be consistent with 'sorted' above
         caption_df = caption_df.sort_values('image_file')
@@ -513,7 +523,7 @@ def load_and_save_masks_and_captions(
             print("Captions: ", captions)
             print("Images: ", files)
             raise Exception("Not the same number of captions as images! Check that all files passed in have a caption in your caption csv, and vice versa")
-                
+
     else:
         print(f"Generating {len(images)} captions...")
         captions = blip_captioning_dataset(
@@ -532,27 +542,21 @@ def load_and_save_masks_and_captions(
     else:
         seg_masks = face_mask_google_mediapipe(images=images)
 
-    # find the center of mass of the mask
-    if crop_based_on_salience:
-        coms = [_center_of_mass(mask) for mask in seg_masks]
-    else:
-        coms = [(image.size[0] / 2, image.size[1] / 2) for image in images]
-    # based on the center of mass, crop the image to a square
     images = [
-        _crop_to_square(image, com, resize_to=None) for image, com in zip(images, coms)
+        _resize(image, resize_to=None) for image in images
     ]
 
     print(f"Upscaling {len(images)} images...")
     # upscale images anyways
     images = swin_ir_sr(images, target_size=(target_size, target_size))
     images = [
-        image.resize((target_size, target_size), Image.Resampling.LANCZOS)
+        _resize(image, resize_to=target_size)
         for image in images
     ]
 
     seg_masks = [
-        _crop_to_square(mask, com, resize_to=target_size)
-        for mask, com in zip(seg_masks, coms)
+        _resize(mask, resize_to=target_size)
+        for mask in seg_masks
     ]
 
     data = []
